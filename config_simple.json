@@ -1,0 +1,117 @@
+{
+	"vars": {
+		"dest": "software",
+		"scheme": "https://",
+		"site": "www.example.com",
+		"path": "post",
+		"tag_primary": "Software",
+		"starting_page": 1
+	},
+	
+	"process": [{
+		"command": "LOAD",
+		"parameters": {
+			"url": "{{ scheme }}{{ site }}",
+			"path": "{{ path }}",
+			"args": {
+				"tags": "{{ tag_primary }}"
+			}
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "document",
+			"type": "div",
+			"class": "pagination",
+			"as": "page_info"
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "page_info",
+			"type": "a",
+			"get": "element.text",
+			"as": "page_list"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "page_list",
+			"get_index": -2,
+			"as": "page_last",
+			"as_type": "integer",
+			"default": 1
+		}
+	}, {
+		"command": "ITERATE_RANGE",
+		"parameters": {
+			"start": "{{ starting_page }}",
+			"end": "{{ page_last }}",
+			"as": "page_index",
+			"process": [{
+				"command": "LOAD",
+				"parameters": {
+					"url": "{{ scheme }}{{ site }}",
+					"path": "{{ path }}",
+					"args": {
+						"tags": "{{ tag_primary }}",
+						"page": "{{ page_index }}"
+					}
+				}
+			}, {
+				"command": "SELECT_ALL",
+				"parameters": {
+					"from": "document",
+					"type": "a",
+					"class": "directlink",
+					"get": "element.attrs.href",
+					"as": "image_link_list"
+				}
+			}, {
+				"command": "ITERATE",
+				"parameters": {
+					"from": "image_link_list",
+					"as": "image_link_index",
+					"process": [{
+						"command": "SELECT",
+						"parameters": {
+							"from": "image_link_list",
+							"get_index": "{{ image_link_index }}",
+							"as": "image_source"
+						}
+					}, {
+						"command": "SELECT",
+						"parameters": {
+							"from": "image_source",
+							"get_filter": "_re=.*\\/(.*)\\.",
+							"as": "image_name"
+						}
+					}, {
+						"command": "SELECT",
+						"parameters": {
+							"from": "image_source",
+							"get_filter": "_re=.*\\/.*\\.(.*)",
+							"as": "image_type"
+						}
+					}, {
+						"command": "URL_ENCODE",
+						"parameters": {
+							"url": "{{ image_source }}",
+							"ignore": "/:",
+							"as": "image_source"
+						}
+					}, {
+						"command": "SAVE",
+						"parameters": {
+							"url": "{{ image_source }}",
+							"filename": "{{ image_name }}",
+							"filetype": "{{ image_type }}",
+							"destination": "{{ dest }}",
+							"overwrite": false
+						}
+					}]
+				}
+			}]
+		}
+	}]
+}

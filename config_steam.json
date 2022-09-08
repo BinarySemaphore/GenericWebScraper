@@ -1,0 +1,245 @@
+{
+	"vars": {
+		"user": "BinarySemaphore"
+	},
+	
+	"process": [{
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "Getting Steam user '{{ user }}' screenshot game list..."
+		}
+	}, {
+		"command": "LOAD",
+		"parameters": {
+			"url": "https://steamcommunity.com",
+			"path": "/id/{{ user }}/screenshots/"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "document",
+			"type": "div",
+			"id": "sharedfiles_filterselect_app_options",
+			"as": "games"
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "games",
+			"type": "div",
+			"id": "_re=sharedfiles_filterselect_app_option_\\d+$",
+			"as": "games"
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "games",
+			"type": "div",
+			"get": "element.text",
+			"as": "game_name_list"
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "games",
+			"type": "div",
+			"get": "element.attrs.onclick",
+			"get_filter": "_re=appid': '(\\w+)'",
+			"as": "game_appid_list"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "GAMES:"
+		}
+	}, {
+		"command": "ITERATE",
+		"parameters": {
+			"from": "game_name_list",
+			"as": "game_index",
+			"process": [{
+				"command": "SELECT",
+				"parameters": {
+					"from": "game_name_list",
+					"get_index": "{{ game_index }}",
+					"as": "game_name"
+				}
+			}, {
+				"command": "OUTPUT",
+				"parameters": {
+					"text": "\t{{ game_index }}: {{ game_name }}"
+				}
+			}]
+		}
+	}, {
+		"command": "PROMPT",
+		"parameters": {
+			"text": "Select Game: ",
+			"as": "game_index"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "game_name_list",
+			"get_index": "{{ game_index }}",
+			"as": "game_name"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "game_appid_list",
+			"get_index": "{{ game_index }}",
+			"as": "game_appid"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "Getting screenshots for '{{ game_name }}'..."
+		}
+	}, {
+		"command": "LOAD",
+		"parameters": {
+			"url": "https://steamcommunity.com",
+			"path": "/id/{{ user }}/screenshots/",
+			"args": {
+				"p": "1",
+				"appid": "{{ game_appid }}",
+				"sort": "newestfirst",
+				"view": "grid",
+				"browsefilter": "myfiles"
+			}
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "document",
+			"type": "a",
+			"class": "pagingPageLink",
+			"get": "element.text",
+			"as": "page_list"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "page_list",
+			"get_index": -1,
+			"as": "page_last",
+			"as_type": "integer",
+			"default": 1
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": " - {{ page_last }} page(s) of screenshots"
+		}
+	}, {
+		"command": "ITERATE_RANGE",
+		"parameters": {
+			"start": 1,
+			"end": "{{ page_last }}",
+			"as": "page_index",
+			"process": [{
+				"command": "OUTPUT",
+				"parameters": {
+					"text": "###################################"
+				}
+			}, {
+				"command": "OUTPUT",
+				"parameters": {
+					"text": "  PAGE ({{ page_index }} of {{ page_last }})"
+				}
+			}, {
+				"command": "OUTPUT",
+				"parameters": {
+					"text": "###################################"
+				}
+			}, {
+				"command": "LOAD",
+				"parameters": {
+					"url": "https://steamcommunity.com",
+					"path": "/id/{{ user }}/screenshots/",
+					"args": {
+						"p": "{{ page_index }}",
+						"appid": "{{ game_appid }}",
+						"sort": "newestfirst",
+						"view": "grid",
+						"browsefilter": "myfiles"
+					},
+					"retry_if_missing": {
+						"type": "a",
+						"class": "profile_media_item"
+					}
+				}
+			}, {
+				"command": "SELECT_ALL",
+				"parameters": {
+					"from": "document",
+					"type": "a",
+					"class": "profile_media_item",
+					"get": "element.attrs.href",
+					"as": "image_link_list"
+				}
+			}, {
+				"command": "OUTPUT",
+				"parameters": {
+					"text": "Image Links:{{ image_link_list }}",
+					"info": true
+				}
+			}, {
+				"command": "ITERATE",
+				"parameters": {
+					"from": "image_link_list",
+					"as": "image_link_index",
+					"process": [{
+						"command": "SELECT",
+						"parameters": {
+							"from": "image_link_list",
+							"get_index": "{{ image_link_index }}",
+							"as": "image_link"
+						}
+					}, {
+						"command": "SELECT",
+						"parameters": {
+							"from": "image_link",
+							"get_filter": "_re=id=(\\d+)",
+							"as": "image_id"
+						}
+					}, {
+						"command": "LOAD",
+						"parameters": {
+							"url": "{{ image_link }}"
+						}
+					}, {
+						"command": "SELECT",
+						"parameters": {
+							"from": "document",
+							"type": "div",
+							"class": "actualmediactn",
+							"as": "media"
+						}
+					}, {
+						"command": "SELECT",
+						"comment": "Get actual image url excluding any url params if given",
+						"parameters": {
+							"from": "media",
+							"type": "a",
+							"get": "element.attrs.href",
+							"get_filter": "_re=^([^?]+)",
+							"as": "image_source"
+						}
+					}, {
+						"command": "SAVE",
+						"parameters": {
+							"url": "{{ image_source }}/",
+							"header_has_filename": true,
+							"filename": "{{ image_id }}",
+							"filetype": "jpg",
+							"destination": "Steam_{{ user }}_{{ game_name }}",
+							"overwrite": false
+						}
+					}]
+				}
+			}]
+		}
+	}]
+}
