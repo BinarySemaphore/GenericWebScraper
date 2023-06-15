@@ -190,6 +190,7 @@
 				"parameters": {
 					"from": "image_link_list",
 					"as": "image_link_index",
+					"continue_on_error": true,
 					"process": [{
 						"command": "SELECT",
 						"parameters": {

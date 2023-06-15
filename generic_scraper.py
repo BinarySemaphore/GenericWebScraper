@@ -31,9 +31,22 @@ VERSION: 0.2.1
   * OS Valid Encode for Save
   * Minor fixes and improvements
   * Logging improvements and fixes
+
+VERSION: 0.2.2
+* DATE: 2023-05-19
+* AUTHORS: BinarySemaphore
+* NOTES:
+  * Logging improvements for failed LOAD-SELECT combo in Iteration to show source URL if possible
+  * Added continue_on_error option for ITERATE - default is false
+
+VERSION: 0.2.3
+* DATE: 2023-06-14
+* AUTHORS: BinarySemaphore
+* NOTES:
+  * Added "_re_all" to get_filter to allow capturing all matched groups
 '''
 
-__version__ = '0.2.1'
+__version__ = '0.2.3'
 
 
 
@@ -70,7 +83,7 @@ except ImportError:
     print('\nWARNING: Python Twisted module is suggested (download in parallel)\n')
 
 log = logging.getLogger('main')
-
+log.warn = log.warning  # stupidly deprecated warn for less good warning
 
 
 ############################
@@ -217,7 +230,7 @@ class Agent(object):
         url = self.encodeUrlParams(url, params=params)
         log.info('GET request: %s' % url)
 
-        request = urllib_request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        request = urllib_request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'X-Screen-Width': 1080,'X-Screen-Height': 10000})
         self._handleCookies(request=request)
         
         '''
@@ -578,6 +591,7 @@ def run_config_procs(config):
     result = cmd(config, **cmd_params)
     if not result.status:
         log.error('CMD FAILED [%s]: ' + result.msg, cmd_name, *result.msg_args)
+        raise RuntimeError('CMD FAILED')
     if result.var:
         config.var.update(result.var)
         log.info('CMD Result: %r', result.var)
@@ -647,6 +661,7 @@ def _cmd_ITERATE(config, process, **kwargs):
     '''
     _from = kwargs.pop('from')
     _as = kwargs.pop('as', 'index')
+    _continue_on_error = kwargs.pop('continue_on_error', False)
     
     source = config.get_val_from_any_var(_from)
     if not source:
@@ -657,8 +672,17 @@ def _cmd_ITERATE(config, process, **kwargs):
                 'vars': { _as: index },
                 'process': process
             }, parent_config=config)
-            while run_config_procs(sub_config):
-                pass
+            try:
+                while run_config_procs(sub_config):
+                    pass
+            except RuntimeError as e:
+                log.error('Iteration instance failed: %s', str(e))
+                if _continue_on_error:
+                    log.warn('Continue iteration: continue_on_error given')
+                    log.warn('Please review the source of failure and re-execute as needed\n')
+                    continue
+                else:
+                    return Result(False, 'Stopped iteration: no continue_on_error given')
     return Result(True)
 
 
@@ -779,9 +803,10 @@ def _cmd_LOAD(config, url, path="", args={}, retry=5, retry_if_missing={}, **kwa
                 retry -= 1
                 return _cmd_LOAD(config, url, path=path, args=args, retry=retry, retry_if_missing=retry_if_missing, **kwargs)
     resp = {
+        '_url': url,
         _as: parser.document
     }
-    return Result(True, **resp)
+    return Result(True, source=url, **resp)
 
 
 def _cmd_SELECT(config, get_index=None, get_filter=None, as_type=None, default=None, **kwargs):
@@ -812,6 +837,9 @@ def _cmd_SELECT(config, get_index=None, get_filter=None, as_type=None, default=N
 
     if isinstance(source, HTMLEntity):
         result = _cmd_SELECT_ALL(config, **kwargs)
+        if not result.var.get(_as):
+            source = config.var.get('_url', 'Unknown Source')
+            return Result(False, 'Failed to select from source: %r', source)
     else:
         resp = { _as: source }
         result = Result(True, **resp)
@@ -823,10 +851,17 @@ def _cmd_SELECT(config, get_index=None, get_filter=None, as_type=None, default=N
     if get_filter:
         if get_filter.startswith('_re='):
             get_filter = get_filter.replace('_re=', '')
-        term = re.compile(get_filter, re.DOTALL)
-        match = term.search(result.var[_as])
-        if match and match.groups():
-            result.var[_as] = match.groups()[0]
+        if get_filter.startswith('_re_all='):
+            get_filter = get_filter.replace('_re_all=', '')
+            term = re.compile(get_filter, re.DOTALL)
+            match = term.findall(result.var[_as])
+            if match:
+                result.var[_as] = match
+        else:
+            term = re.compile(get_filter, re.DOTALL)
+            match = term.search(result.var[_as])
+            if match and match.groups():
+                result.var[_as] = match.groups()[0]
 
     if default is not None and result.var.get(_as) is None:
         result.var[_as] = default
@@ -867,6 +902,7 @@ def _cmd_SELECT_ALL(config, default=None, **kwargs):
             result_item = html_entity_search(source_item, _type, _id, _class, _get, _get_filter, '_tmp_last')
             if result_item.status and result_item.var.get('_tmp_last'):
                 found.extend(result_item.var['_tmp_last'])
+        log.debug('Found: %r', found)
         if not found:
             if default is not None:
                 resp = { _as: default }
@@ -875,7 +911,9 @@ def _cmd_SELECT_ALL(config, default=None, **kwargs):
         log.debug('Storing all %d result(s) in vars "%s"', len(found), _as)
         resp = { _as: found }
         return Result(True, **resp)
-    return html_entity_search(source, _type, _id, _class, _get, _get_filter, _as)
+    results = html_entity_search(source, _type, _id, _class, _get, _get_filter, _as)
+    log.debug('Found: %r', results)
+    return results
 
 
 
@@ -909,7 +947,7 @@ def html_entity_search(source, _type, _id, _class, _get, _get_filter, _as, defau
                         new_possible.append(entity)
             elif _id in entity.attrs.get('id', []):
                 new_possible.append(entity)
-        log.debug("Found %d '%s' with id '%s'" % (len(new_possible), _type, _class))
+        log.debug("Found %d '%s' with id '%s'" % (len(new_possible), _type, _id))
         possible = new_possible
 
     if _class:
