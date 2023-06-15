@@ -1,0 +1,119 @@
+{
+	"vars": {
+		"address": "7507-Pine-Knoll-Cir-Prospect-KY-40059",
+		"id": "73474280_zpid",
+		"scheme": "https",
+		"site": "www.zillow.com",
+		"path": "homedetails"
+	},
+	
+	"process": [{
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "Getting home details..."
+		}
+	}, {
+		"command": "LOAD",
+		"parameters": {
+			"url": "{{ scheme }}://{{ site }}",
+			"path": "{{ path }}/{{ address }}/{{ id }}",
+			"retry_if_missing": {
+				"type": "script",
+				"id": "__NEXT_DATA__"
+			}
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "document",
+			"type": "div",
+			"class": "media-column-container",
+			"as": "media"
+		}
+	}, {
+		"command": "SELECT_ALL",
+		"parameters": {
+			"from": "media",
+			"type": "li",
+			"as": "media_list"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "Find largest image size"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "media_list",
+			"type": "source",
+			"get_index": "0",
+			"as": "first_image"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "first: {{ first_image }}",
+			"info": true
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "first_image",
+			"type": "source",
+			"get": "element.attrs.srcset",
+			"as": "source_set"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "srcset: {{ source_set }}",
+			"info": true
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "source_set",
+			"get_filter": "_re=.*,.*(-cc_ft_\\d+)",
+			"as": "this_size"
+		}
+	}, {
+		"command": "OUTPUT",
+		"parameters": {
+			"text": "Largest size id: {{ this_size }}"
+		}
+	}, {
+		"command": "SELECT",
+		"parameters": {
+			"from": "document",
+			"type": "script",
+			"id": "__NEXT_DATA__",
+			"get": "element.text",
+			"get_filter": "_re_all=(https:\\/\\/photos\\.zillowstatic\\.com\\/fp\\/[0-9a-z]+{{ this_size }}.jpg)",
+			"as": "image_links"
+		}
+	}, {
+		"command": "ITERATE",
+		"parameters": {
+			"from": "image_links",
+			"as": "index",
+			"process": [{
+				"command": "SELECT",
+				"parameters": {
+					"from": "image_links",
+					"get_index": "{{ index }}",
+					"as": "image_url"
+				}
+			}, {
+				"command": "SAVE",
+				"parameters": {
+					"url": "{{ image_url }}",
+					"filename": "{{ index }}",
+					"filetype": "jpg",
+					"destination": "Zillow_{{ address }}",
+					"overwrite": false
+				}
+			}]
+		}
+	}]
+}
